@@ -207,6 +207,7 @@ class Scoundrel:
         """
         Calculate damage from monster and apply to health.
         """
+        self.emit('battle_monster', monster=monster_card)
         weapon = self.get_weapon_for_battle(monster_card)
 
         # Place monster in play or discard if no equiped weapon card.
@@ -216,6 +217,8 @@ class Scoundrel:
         else:
             dest = self.discard_deck
         self.move_card(monster_card, self.room_deck, dest)
+
+        # Calculate and apply damage from monster.
         self.apply_damage(weapon, monster_card)
 
     def loop_step(self):

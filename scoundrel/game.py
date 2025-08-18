@@ -171,15 +171,19 @@ class Scoundrel:
     def get_weapon_for_battle(self, monster_card):
         # If a monster of greater value than the lowest monster already on the
         # weapon is played, the player must fight it barehanded.
+        weapon = self.weapon_in_play()
         if self.battlefield_deck:
             monsters_in_play = self.monsters_in_play()
-            if monsters_in_play:
+            if not monsters_in_play:
+                # Weapon in play, no monsters, player gets to use it.
+                return weapon
+            else:
                 weakest_monster = self.weakest_monster()
                 if monster_card.game_value < weakest_monster.game_value:
                     # The played monster has a lesser value than the weakest
                     # already in play. The player uses their weapon to reduce
                     # damage taken.
-                    return self.weapon_in_play()
+                    return weapon
 
     def apply_damage(self, weapon, monster_card):
         """

@@ -21,24 +21,46 @@ class ScoundrelTUI:
 
     def init_game(self, game):
         game.on('player_damage', self.alert_damage_taken)
-        game.on('begin_turn', self.alert_battlefield_deck)
+        game.on('begin_turn', self.alert_begin_turn)
         game.on('play_card', self.generic_alert)
         game.on('ran_away', self.generic_alert)
         game.on('game_over', self.game_over_alert)
+        game.on('init_room', self.alert_init_room)
+        game.on('heal', self.alert_heal)
+        game.on('ran_away', self.alert_ran_away)
+
+    def alert_ran_away(self, event_name, game):
+        self.stream.write(f'\nYou run from the room.\n')
+
+    def alert_heal(self, event_name, game, amount, card):
+        self.stream.write(f'\nYou healed for {amount}.\n')
+
+    def alert_init_room(self, event_name, game):
+        self.stream.write(f'\nYou step into a new room.\n')
 
     def alert_damage_taken(self, event_name, game, damage, source, weapon):
-        if source.game_value == damage:
-            self.stream.write(f'{source.game_string} does full damage!\n')
+        if damage <= 0:
+            self.stream.write(
+                f'\nYour weapon avoids all damage from {source.game_string}!\n')
         else:
-            self.stream.write(f'{damage} damage from {source.game_string}.\n')
+            if source.game_value == damage:
+                self.stream.write(
+                    f'\n{source.game_string} does full damage!\n')
+            else:
+                self.stream.write(
+                    f'\n{damage} damage from {source.game_string}.\n')
 
     def generic_alert(self, **kwargs):
         self.stream.write(f'{kwargs}\n')
 
-    def alert_battlefield_deck(self, event_name, game):
-        # Print playing
-        if game.battlefield_deck:
-            self.stream.write('Playing\n')
+    def alert_begin_turn(self, event_name, game):
+        """
+        Cards in play on the battlefield.
+        """
+        if not game.battlefield_deck:
+            self.stream.write('\nThe battlefield awaits you\n')
+        else:
+            self.stream.write('\nBattlefield\n')
             for card in game.battlefield_deck:
                 self.stream.write(f'{INDENT}{card.game_string}\n')
 
@@ -58,7 +80,7 @@ class ScoundrelTUI:
         indexed = [(index, value, label) for index, (value, label) in indexed]
 
         while True:
-            self.stream.write('Choose card from room\n')
+            self.stream.write('\nChoose card from room\n')
             for index, _, label in indexed:
                 self.stream.write(f'({index}) {label}\n')
 

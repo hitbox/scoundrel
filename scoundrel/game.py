@@ -210,7 +210,8 @@ class Scoundrel:
         weapon = self.get_weapon_for_battle(monster_card)
 
         # Place monster in play or discard if no equiped weapon card.
-        if self.battlefield_deck:
+        equiped_weapon = self.weapon_in_play()
+        if equiped_weapon:
             dest = self.battlefield_deck
         else:
             dest = self.discard_deck

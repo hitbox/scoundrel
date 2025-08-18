@@ -102,7 +102,7 @@ class Scoundrel:
         """
         self.emit('ran_away')
         self.avoided_room = True
-        for card in list(cards):
+        for card in list(self.room_deck):
             self.move_card(card, self.room_deck, self.dungeon, to_bottom=True)
 
     def play_card(self, card):

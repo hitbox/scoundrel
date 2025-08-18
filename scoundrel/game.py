@@ -196,12 +196,12 @@ class Scoundrel:
             damage -= weapon.game_value
         if damage > 0:
             self.health -= damage
-            self.emit(
-                'player_damage',
-                damage = damage,
-                source = monster_card,
-                weapon = weapon,
-            )
+        self.emit(
+            'player_damage',
+            damage = damage,
+            source = monster_card,
+            weapon = weapon,
+        )
 
     def battle_monster(self, monster_card):
         """

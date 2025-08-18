@@ -1,7 +1,7 @@
 import random
 
 from .argument_parser import argument_parser
-from .dungeon import create_dungeon
+from .card import ScoundrelCard
 from .game import Scoundrel
 from .view import ScoundrelTUI
 
@@ -16,7 +16,7 @@ def main(argv=None):
         random.seed(args.seed)
 
     # Build a scoundrel dungeon deck
-    dungeon_deck = create_dungeon()
+    dungeon_deck = ScoundrelCard.create_dungeon(half_monsters=args.half_monsters)
     random.shuffle(dungeon_deck)
 
     # Run a scoundrel game with a text interface.

@@ -19,6 +19,12 @@ def argument_parser():
     )
 
     parser.add_argument(
+        '--half-monsters',
+        action = 'store_true',
+        help = 'Only half of the monsters spawn.',
+    )
+
+    parser.add_argument(
         '--god',
         action = 'store_true',
         help = 'Invincible player mode.',

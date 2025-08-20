@@ -1,6 +1,7 @@
 from collections import defaultdict
 
 from .card import ScoundrelCard
+from .deck import DeckManager
 
 class Scoundrel:
     """
@@ -9,13 +10,18 @@ class Scoundrel:
 
     MAX_HEALTH = 20
 
-    def __init__(self, dungeon, prompt_for_turn, god_mode=False):
-        self.dungeon = dungeon
+    FULL_ROOM_SIZE = 4
+
+    def __init__(self, dungeon, prompt_for_turn, deck_manager=None, god_mode=False):
+        if deck_manager is None:
+            deck_manager = DeckManager(
+                'dungeon', 'room', 'battlefield', 'discard')
+        self.decks = deck_manager
+        self.decks.set_deck('dungeon', dungeon)
+
         self.prompt_for_turn = prompt_for_turn
         self.god_mode = god_mode
-        self.room_deck = []
-        self.discard_deck = []
-        self.battlefield_deck = []
+
         self.avoided_room = False
         self.health = self.MAX_HEALTH
         self.listeners = defaultdict(list)
@@ -34,12 +40,7 @@ class Scoundrel:
             listener(event_name=event_name, game=self, **event_data)
 
     def move_card(self, card, source, dest, to_bottom=False):
-        """
-        Move card from one deck to another.
-        """
-        source.pop(source.index(card))
-        index = 0 if to_bottom else len(dest)
-        dest.insert(index, card)
+        self.decks.move_card(card, source, dest, to_bottom)
         self.emit('move_card', card=card, source=source, dest=dest)
 
     def init_room(self):
@@ -47,9 +48,13 @@ class Scoundrel:
         Build a room by drawing from the dungeon until the room is filled with
         four cards.
         """
-        while self.dungeon and len(self.room_deck) < 4:
-            card = self.dungeon[-1]
-            self.move_card(card, self.dungeon, self.room_deck)
+        while (
+            self.decks.cards('dungeon')
+            and
+            self.decks.length('room') < self.FULL_ROOM_SIZE
+        ):
+            card = self.decks.top_card('dungeon')
+            self.move_card(card, 'dungeon', 'room')
         self.emit('init_room')
 
     def begin_turn(self):
@@ -60,7 +65,7 @@ class Scoundrel:
 
     @property
     def is_new_room(self):
-        return len(self.room_deck) == 4
+        return self.decks.length('room') == self.FULL_ROOM_SIZE
 
     @property
     def is_avoid_room_available(self):
@@ -72,7 +77,7 @@ class Scoundrel:
 
     @property
     def is_dungeon_alive(self):
-        return bool(self.dungeon)
+        return self.decks.length('dungeon') > 0
 
     @property
     def is_player_alive(self):
@@ -87,7 +92,7 @@ class Scoundrel:
         Create a choices dict for the beginning of a turn.
         """
         choices = []
-        for card in self.room_deck:
+        for card in self.decks.cards('room'):
             choices.append((card, card.game_string))
 
         # Allow running on first turn and didn't run last room.
@@ -102,8 +107,8 @@ class Scoundrel:
         """
         self.emit('ran_away')
         self.avoided_room = True
-        for card in list(self.room_deck):
-            self.move_card(card, self.room_deck, self.dungeon, to_bottom=True)
+        for card in list(self.decks.cards('room')):
+            self.move_card(card, 'room', 'dungeon', to_bottom=True)
 
     def play_card(self, card):
         """
@@ -112,7 +117,7 @@ class Scoundrel:
         if card.is_health:
             # Apply health and discard.
             self.apply_health_potion(card)
-            self.move_card(card, self.room_deck, self.discard_deck)
+            self.move_card(card, 'room', 'discard')
 
         elif card.is_weapon:
             self.equip_weapon(card)
@@ -133,9 +138,9 @@ class Scoundrel:
         """
         Move cards from play to discarded.
         """
-        while self.battlefield_deck:
-            card = self.battlefield_deck[-1]
-            self.move_card(card, self.battlefield_deck, self.discard_deck)
+        while self.decks.cards('battlefield'):
+            card = self.decks.top_card('battlefield')
+            self.move_card(card, 'battlefield', 'discard')
 
     def equip_weapon(self, card):
         """
@@ -144,13 +149,13 @@ class Scoundrel:
         weapon_in_play = self.weapon_in_play()
         if weapon_in_play:
             self.discard_playing_deck()
-        self.move_card(card, self.room_deck, self.battlefield_deck)
+        self.move_card(card, 'room', 'battlefield')
 
     def monsters_in_play(self):
         """
         Return all the monster cards in play.
         """
-        return [card for card in self.battlefield_deck if card.is_monster]
+        return [card for card in self.decks.cards('battlefield') if card.is_monster]
 
     def weakest_monster(self):
         """
@@ -162,7 +167,7 @@ class Scoundrel:
         """
         Return the equiped weapon card or None.
         """
-        for card in self.battlefield_deck:
+        for card in self.decks.cards('battlefield'):
             if not card.is_weapon:
                 # Raise for assumption.
                 raise RuntimeError(f'The first card in play must be a weapon.')
@@ -172,7 +177,7 @@ class Scoundrel:
         # If a monster of greater value than the lowest monster already on the
         # weapon is played, the player must fight it barehanded.
         weapon = self.weapon_in_play()
-        if self.battlefield_deck:
+        if self.decks.cards('battlefield'):
             monsters_in_play = self.monsters_in_play()
             if not monsters_in_play:
                 # Weapon in play, no monsters, player gets to use it.
@@ -213,10 +218,10 @@ class Scoundrel:
         # Place monster in play or discard if no equiped weapon card.
         equiped_weapon = self.weapon_in_play()
         if equiped_weapon:
-            dest = self.battlefield_deck
+            dest = 'battlefield'
         else:
-            dest = self.discard_deck
-        self.move_card(monster_card, self.room_deck, dest)
+            dest = 'discard'
+        self.move_card(monster_card, 'room', dest)
 
         # Calculate and apply damage from monster.
         self.apply_damage(weapon, monster_card)
@@ -228,7 +233,7 @@ class Scoundrel:
         self.init_room()
 
         # Play until one card left in the room.
-        while self.is_playing and len(self.room_deck) > 1:
+        while self.is_playing and len(self.decks.cards('room')) > 1:
             self.begin_turn()
             choices = self.choices_for_turn()
             card_or_run = self.prompt_for_turn(self, choices)

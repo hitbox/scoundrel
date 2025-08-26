@@ -3,7 +3,6 @@ import random
 
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
-from itertools import groupby
 
 from scoundrel import parse
 from scoundrel import runner
@@ -21,15 +20,12 @@ from scoundrel.suit import Suit
 from scoundrel.util import human_split
 from scoundrel.util import letter_indexer
 
-from . import layout
 from .animation import AnimationManager
-from .animation import FrameAnimation
 from .animation import get_named_animations
 from .assets import Assets
 from .relationship import Relationship
 from .relationship import RelationshipManager
 from .util import create_sprite_from_card
-from .util import post_quit
 
 class ScoundrelPygame:
 

@@ -7,3 +7,6 @@ def letter_indexer(iterable):
     for index, item in enumerate(iterable):
         letter = string.ascii_lowercase[index]
         yield (letter, item)
+
+def human_split(string):
+    return string.replace(',', ' ').split()

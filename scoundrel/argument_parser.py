@@ -1,6 +1,11 @@
 import argparse
 import os
 
+from .game import Scoundrel
+from .view import AssetBrowser
+from .view import ScoundrelPygame
+from .view import ScoundrelTUI
+
 def argument_parser():
     """
     Create argument parser.
@@ -11,23 +16,11 @@ def argument_parser():
         description = 'Play a game of scoundrel.',
         prog = prog,
     )
+    Scoundrel.add_arguments(parser)
 
-    parser.add_argument(
-        '--seed',
-        type = int,
-        help = 'Set random seed value.',
-    )
-
-    parser.add_argument(
-        '--half-monsters',
-        action = 'store_true',
-        help = 'Only half of the monsters spawn.',
-    )
-
-    parser.add_argument(
-        '--god',
-        action = 'store_true',
-        help = 'Invincible player mode.',
-    )
+    subparsers = parser.add_subparsers(title='interface', required=True)
+    ScoundrelTUI.add_subparser(subparsers)
+    ScoundrelPygame.add_subparser(subparsers)
+    AssetBrowser.add_subparser(subparsers)
 
     return parser

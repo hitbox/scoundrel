@@ -1,11 +1,14 @@
 import sys
 
-from .choose import ChooseMenu
-from .util import letter_indexer
+from scoundrel import runner
+from scoundrel.choose import ChooseMenu
+from scoundrel.util import letter_indexer
+
+from .base import ViewBase
 
 INDENT = '  '
 
-class ScoundrelTUI:
+class ScoundrelTUI(ViewBase):
     """
     Scoundrel text user interface.
     """
@@ -16,6 +19,30 @@ class ScoundrelTUI:
         if menu_class is None:
             menu_class = ChooseMenu
         self.menu_class = menu_class
+
+    @classmethod
+    def add_subparser(cls, subparsers):
+        """
+        Add subparser for scoundrel text user interface with function to create
+        interface from cli arguments.
+        """
+        text_subparser = subparsers.add_parser('text')
+        text_subparser.add_argument(
+            '--stream',
+            default = 'stdout',
+            help = 'Text stream output. Default: %(default)s',
+        )
+        text_subparser.set_defaults(
+            func = runner.run,
+            view_class = cls.from_args,
+        )
+
+    @classmethod
+    def from_args(cls, args):
+        instance = cls(
+            stream = getattr(sys, args.stream),
+        )
+        return instance
 
     @property
     def stream(self):

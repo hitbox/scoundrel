@@ -1,14 +1,24 @@
-from enum import Enum
+from enum import IntEnum
 
-class Suit(Enum):
+class Suit(IntEnum):
     """
     Enumeration of card suits.
     """
 
-    CLUBS = 'clubs'
-    DIAMONDS = 'diamonds'
-    HEARTS = 'hearts'
-    SPADES = 'spades'
+    CLUBS = 1
+    DIAMONDS = 2
+    HEARTS = 3
+    SPADES = 4
+
+    def __lt__(self, other):
+        return self.value < other.value
+
+    @classmethod
+    def hearts_diamonds_clubs_spades(cls):
+        yield cls.HEARTS
+        yield cls.DIAMONDS
+        yield cls.CLUBS
+        yield cls.SPADES
 
     @property
     def is_weapon(self):

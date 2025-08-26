@@ -28,6 +28,9 @@ from .relationship import RelationshipManager
 from .util import create_sprite_from_card
 
 class ScoundrelPygame:
+    """
+    Scoundrel pygame user interface.
+    """
 
     default_display_size = (600, 600)
     default_framerate = 60

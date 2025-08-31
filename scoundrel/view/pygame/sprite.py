@@ -1,6 +1,10 @@
 from scoundrel.external import pygame
 
-class MonsterSprite(pygame.sprite.Sprite):
+class ScoundrelSprite(pygame.sprite.Sprite):
+    """
+    A sprite for the scoundrel pygame interface that includes important links
+    to game data.
+    """
 
     def __init__(
         self,
@@ -21,13 +25,21 @@ class MonsterSprite(pygame.sprite.Sprite):
 
 def create_run_card(size, font, *groups):
     image = pygame.Surface(size)
-    run_card = MonsterSprite(image, *groups)
+    run_card = ScoundrelSprite(image, *groups)
     text_image = font.render('Run', True, 'white')
     text_rect = text_image.get_rect(center=run_card.rect.center)
     run_card.image.blit(text_image, text_rect)
     return run_card
 
-def create_text_sprite(font, text, color, padding, align=None, antialias=True, groups=None):
+def create_text_sprite(
+    font,
+    text,
+    color,
+    padding,
+    align = None,
+    antialias = True,
+    groups = None,
+):
     if groups is None:
         groups = ()
     text_image = font.render(text, antialias, color)
@@ -36,7 +48,7 @@ def create_text_sprite(font, text, color, padding, align=None, antialias=True, g
     size = tuple(a + b for a, b in zip(text_rect.size, padding))
     image = pygame.Surface(size)
 
-    sprite = MonsterSprite(image, *groups)
+    sprite = ScoundrelSprite(image, *groups)
 
     alignment = {}
     if align is not None:

@@ -30,10 +30,9 @@ from .prompt import PromptTurn
 from .quit_prompt import QuitPrompt
 from .relationship import Relationship
 from .relationship import RelationshipManager
-from .sprite import MonsterSprite
+from .sprite import ScoundrelSprite
 from .sprite import create_run_card
 from .sprite import create_text_sprite
-from .util import create_sprite_from_card
 
 class ScoundrelPygame:
     """
@@ -140,6 +139,7 @@ class ScoundrelPygame:
     def init_listeners(self, game):
         game.on(Event.HEAL, self.dispatch_flash)
         game.on(Event.PLAYER_DAMAGE, self.dispatch_flash)
+        game.on(Event.RAN_AWAY, self.dispatch_flash)
 
         game.on(Event.INIT_ROOM, self.on_init_room)
         game.on(Event.MOVE_CARD, self.on_move_card)
@@ -197,12 +197,12 @@ class ScoundrelPygame:
         self.sprite_for_card = {}
         for card in game.decks['dungeon']:
             image = self.assets['smallcards'][(card.suit, card.rank)]
-            card_sprite = create_sprite_from_card(card, image)
+            card_sprite = ScoundrelSprite(image, card=card)
             card_sprite.animated_sprite = None
             self.sprite_for_card[card] = card_sprite
             if card.is_monster:
                 animation = random.choice(list(self.named_animations.values()))
-                card_sprite.animated_sprite = MonsterSprite(animation.frames[0])
+                card_sprite.animated_sprite = ScoundrelSprite(animation.frames[0])
                 self.animation_manager.add(card_sprite.animated_sprite, animation)
                 align_monster_to_card = AlignRelationship(
                     to_index = 0,
@@ -333,6 +333,7 @@ class ScoundrelPygame:
         sprites = [self.sprite_for_choice(option) for _, option, _ in indexed]
         for sprite in sprites:
             if sprite:
+                sprite.deck = Deck.ROOM
                 self.sprites.add(sprite)
         rects = [sprite.rect if sprite else None for sprite in sprites]
         self.room_layout(rects)
@@ -363,11 +364,10 @@ class ScoundrelPygame:
     def get_click_card(self, point):
         for sprite in self.sprites:
             if (
-                sprite.card
-                and sprite.deck == Deck.ROOM
+                sprite.deck == Deck.ROOM
                 and sprite.rect.collidepoint(point)
             ):
-                return sprite.card
+                return sprite
 
     def tick(self):
         return self.clock.tick(self.framerate)
@@ -391,8 +391,11 @@ class ScoundrelPygame:
             if result == QuitPrompt.QUIT:
                 game.quit()
                 break
-            elif isinstance(result, ScoundrelCard):
-                return result
+            elif isinstance(result, ScoundrelSprite):
+                if result.card:
+                    return result.card
+                else:
+                    return result
 
     def prompt_for_quit(self, game):
         self.sprites.add(self.quit_prompt_sprites)

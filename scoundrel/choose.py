@@ -1,4 +1,7 @@
 class ChooseMenu:
+    """
+    Menu to choose from that keeps the position of items.
+    """
 
     def __init__(self, indexed_choices):
         self.indexed_choices = indexed_choices

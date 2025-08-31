@@ -9,6 +9,7 @@ from scoundrel.constant import CONFIG_KEY
 from scoundrel.external import pygame
 from scoundrel.rank import Rank
 from scoundrel.suit import Suit
+from scoundrel.util import human_split
 from scoundrel.view.pygame.rect_grid import RectGrid
 
 from .util import strip_alpha
@@ -86,3 +87,19 @@ class Assets:
             section = cp[section_name]
             instance = cls.from_config(section)
             yield (suffix, instance)
+
+
+def scoundrel_assets_from_config(cp):
+    # Strictly build a dictionary from the suffixes referencing other sections
+    # in the config. Raise for existing keys.
+    assets = {}
+    suffixes = human_split(cp['pygame_user_interface']['spritesheets'])
+    for suffix, assets_instance in Assets.from_config_many(cp, suffixes):
+        if suffix not in assets:
+            assets[suffix] = {}
+        # Strictly update dict.
+        for key, image in assets_instance.images.items():
+            if key in assets[suffix]:
+                raise KeyError
+            assets[suffix][key] = image
+    return assets

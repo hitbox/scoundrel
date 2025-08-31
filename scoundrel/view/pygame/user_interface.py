@@ -3,6 +3,7 @@ import random
 
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
+from enum import IntEnum
 
 from scoundrel import parse
 from scoundrel import runner
@@ -12,19 +13,26 @@ from scoundrel.card import ScoundrelCard
 from scoundrel.choose import ChooseMenu
 from scoundrel.constant import CONFIG_KEY
 from scoundrel.deck import Deck
+from scoundrel.event import Event
 from scoundrel.external import pygame
 from scoundrel.game import Scoundrel
 from scoundrel.message import ScoundrelMessage
 from scoundrel.rank import Rank
 from scoundrel.suit import Suit
-from scoundrel.util import human_split
 from scoundrel.util import letter_indexer
 
 from .animation import AnimationManager
 from .animation import get_named_animations
-from .assets import Assets
+from .assets import scoundrel_assets_from_config
+from .layout import move_as_group
+from .prompt import PromptQuit
+from .prompt import PromptTurn
+from .quit_prompt import QuitPrompt
 from .relationship import Relationship
 from .relationship import RelationshipManager
+from .sprite import MonsterSprite
+from .sprite import create_run_card
+from .sprite import create_text_sprite
 from .util import create_sprite_from_card
 
 class ScoundrelPygame:
@@ -102,20 +110,6 @@ class ScoundrelPygame:
             raise ValueError('--frame-rate must be positive.')
 
     @classmethod
-    def assets_dict_from_config(cls, cp):
-        assets = {}
-        suffixes = human_split(cp['pygame_user_interface']['spritesheets'])
-        for suffix, assets_instance in Assets.from_config_many(cp, suffixes):
-            if suffix not in assets:
-                assets[suffix] = {}
-            # Strictly update dict.
-            for key, image in assets_instance.images.items():
-                if key in assets[suffix]:
-                    raise KeyError
-                assets[suffix][key] = image
-        return assets
-
-    @classmethod
     def from_args(cls, args):
         """
         Scoundrel pygame interface from command line arguments.
@@ -127,7 +121,7 @@ class ScoundrelPygame:
         )
         cp.read(args.config or os.environ.get(CONFIG_KEY))
 
-        assets = cls.assets_dict_from_config(cp)
+        assets = scoundrel_assets_from_config(cp)
 
         instance = cls(
             display_size = args.display_size,
@@ -144,20 +138,106 @@ class ScoundrelPygame:
         self.ui_font = pygame.font.Font(None, 32)
 
     def init_listeners(self, game):
-        game.on('heal', self.dispatch_flash)
-        game.on('player_damage', self.dispatch_flash)
+        game.on(Event.HEAL, self.dispatch_flash)
+        game.on(Event.PLAYER_DAMAGE, self.dispatch_flash)
 
-        game.on('init_room', self.on_init_room)
-        game.on('move_card', self.on_move_card)
-        game.on('game_over', self.hold_last_frame)
+        game.on(Event.INIT_ROOM, self.on_init_room)
+        game.on(Event.MOVE_CARD, self.on_move_card)
+        game.on(Event.GAME_OVER, self.on_game_over)
 
-    def hold_last_frame(self, event_name, game):
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-            pygame.display.update()
+    def init_health_sprites(self):
+        self.health_sprites = []
+        image = self.assets['suits']['hearts']
+        rect = image.get_rect()
+        for _ in range(Scoundrel.MAX_HEALTH):
+            sprite = pygame.sprite.Sprite(self.sprites)
+            sprite.image = image
+            sprite.rect = rect.copy()
+            sprite.deck = None
+            sprite.card = None
+            self.health_sprites.append(sprite)
+
+        self.health_layout = FlexLayout.from_columns(
+            tile_width = rect.width,
+            ncols = 10,
+            gap = (2,0),
+            centerx = self.display_rect.centerx,
+            y = 2,
+        )
+        self.health_layout([sprite.rect for sprite in self.health_sprites])
+
+    def init_quit_sprites(self):
+        self.quit_prompt_sprites = []
+
+        text_color = 'white'
+        padding = (16, 8)
+        border = 2
+        align = 'center'
+
+        confirm = create_text_sprite(self.ui_font, 'Quit', text_color, padding, align)
+        pygame.draw.rect(confirm.image, text_color, confirm.rect, border)
+        confirm.value = QuitPrompt.QUIT
+
+        cancel = create_text_sprite(self.ui_font, 'Cancel', text_color, padding, align)
+        pygame.draw.rect(cancel.image, text_color, cancel.rect, border)
+        cancel.value = QuitPrompt.CANCEL
+
+        self.quit_prompt_sprites.append(confirm)
+        self.quit_prompt_sprites.append(cancel)
+
+        gap_x = 8
+        for s1, s2 in zip(self.quit_prompt_sprites, self.quit_prompt_sprites[1:]):
+            s2.rect.left = s1.rect.right + gap_x
+
+        rects = [s.rect for s in self.quit_prompt_sprites]
+        move_as_group(rects, center=self.display_rect.center)
+
+
+    def init_card_sprites(self, game):
+        self.sprite_for_card = {}
+        for card in game.decks['dungeon']:
+            image = self.assets['smallcards'][(card.suit, card.rank)]
+            card_sprite = create_sprite_from_card(card, image)
+            card_sprite.animated_sprite = None
+            self.sprite_for_card[card] = card_sprite
+            if card.is_monster:
+                animation = random.choice(list(self.named_animations.values()))
+                card_sprite.animated_sprite = MonsterSprite(animation.frames[0])
+                self.animation_manager.add(card_sprite.animated_sprite, animation)
+                align_monster_to_card = AlignRelationship(
+                    to_index = 0,
+                    from_attr = 'midbottom',
+                    to_attr = 'midtop',
+                )
+                relationship = Relationship(
+                    card_sprite.rect,
+                    card_sprite.animated_sprite.rect,
+                    align_monster_to_card,
+                )
+                self.relationship_manager.append(relationship)
+
+    def init_layouts(self, reference_rect):
+        self.room_layout = FlexLayout.from_columns(
+            tile_width = reference_rect.width,
+            ncols = 5,
+            gap = (2, 0),
+            centerx = self.display_rect.centerx,
+            y = 150,
+        )
+
+        self.battlefield_layout = FlexLayout.from_columns(
+            tile_width = reference_rect.width,
+            ncols = 6,
+            gap = (-reference_rect.width / 4, -reference_rect.height / 4),
+            midtop = self.display_rect.center,
+        )
+
+        self.message_layout = FlexLayout(
+            origin = self.display_rect.bottomleft,
+            axis = 'vertical',
+            direction = 'reverse',
+            boundary = None,
+        )
 
     def init_game(self, game):
         """
@@ -176,61 +256,10 @@ class ScoundrelPygame:
         reference_rect = self.assets['smallcards'][(Suit.DIAMONDS, Rank.ACE)].get_rect()
         self.run_card = create_run_card(reference_rect.size, self.ui_font)
 
-        # Health
-        self.health_image = self.assets['suits']['hearts']
-        self.health_rect = self.health_image.get_rect()
-        self.health_layout = FlexLayout.from_columns(
-            tile_width = self.health_rect.width,
-            ncols = 10,
-            gap = (2,0),
-            centerx = self.display_rect.centerx,
-            y = 2,
-        )
-
-        self.sprite_for_card = {}
-        for card in game.decks['dungeon']:
-            image = self.assets['smallcards'][(card.suit, card.rank)]
-            card_sprite = create_sprite_from_card(card, image)
-            card_sprite.animated_sprite = None
-            self.sprite_for_card[card] = card_sprite
-            if card.is_monster:
-                animation = random.choice(list(self.named_animations.values()))
-                card_sprite.animated_sprite = create_monster_sprite(animation.frames[0])
-                self.animation_manager.add(card_sprite.animated_sprite, animation)
-                align_monster_to_card = AlignRelationship(
-                    to_index = 0,
-                    from_attr = 'midbottom',
-                    to_attr = 'midtop',
-                )
-                relationship = Relationship(
-                    card_sprite.rect,
-                    card_sprite.animated_sprite.rect,
-                    align_monster_to_card,
-                )
-                self.relationship_manager.append(relationship)
-
-        self.room_layout = FlexLayout.from_columns(
-            tile_width = reference_rect.width,
-            ncols = 5,
-            gap = (2, 0),
-            centerx = self.display_rect.centerx,
-            y = 150, # TODO
-        )
-
-        self.battlefield_layout = FlexLayout.from_columns(
-            tile_width = reference_rect.width,
-            ncols = 6,
-            gap = (-reference_rect.width / 4, -reference_rect.height / 4),
-            midtop = self.display_rect.center,
-        )
-
-        self.message_layout = FlexLayout(
-            origin = self.display_rect.bottomleft,
-            axis = 'vertical',
-            direction = 'reverse',
-            boundary = None,
-        )
-
+        self.init_quit_sprites()
+        self.init_health_sprites()
+        self.init_card_sprites(game)
+        self.init_layouts(reference_rect)
         self.init_listeners(game)
 
     def dispatch_flash(self, event_name, game, **kwargs):
@@ -277,35 +306,34 @@ class ScoundrelPygame:
             # Keep last three
             self.message_list = self.message_list[-self.messages_length:]
 
-    def _health_rects(self, health_count):
+    def update_health_sprites(self, health_count):
         """
         Instantiate and return rects for health images for a given count.
         """
-        health_rects = [self.health_rect.copy() for _ in range(health_count)]
-        if health_rects:
-            self.health_layout(health_rects)
-        return health_rects
+        for index in range(Scoundrel.MAX_HEALTH):
+            if index < health_count:
+                self.sprites.add(self.health_sprites[index])
+            else:
+                self.sprites.remove(self.health_sprites[index])
 
     def _max_health_bottom(self):
-        health_rects = self._health_rects(Scoundrel.MAX_HEALTH)
-        bottom = max(rect.bottom for rect in health_rects)
+        rects = [sprite.rect for sprite in self.health_sprites]
+        bottom = max(rect.bottom for rect in rects)
         return bottom
-
-    def _layout_health(self, game):
-        health_rects = self._health_rects(game.health)
-        return health_rects
 
     def sprite_for_choice(self, key):
         if isinstance(key, ScoundrelCard):
             return self.sprite_for_card[key]
         elif key == 'r':
-            self.sprites.add(self.run_card)
             return self.run_card
 
     def layout_room_cards(self, available_choices):
         self.sprites.remove(self.run_card)
         indexed = self.room_menu.menu_lines()
         sprites = [self.sprite_for_choice(option) for _, option, _ in indexed]
+        for sprite in sprites:
+            if sprite:
+                self.sprites.add(sprite)
         rects = [sprite.rect if sprite else None for sprite in sprites]
         self.room_layout(rects)
 
@@ -313,27 +341,23 @@ class ScoundrelPygame:
         rects = [self.sprite_for_card[card].rect for card in game.decks['battlefield']]
         self.battlefield_layout(rects)
 
+    def update(self, elapsed, game):
+        self.animation_manager.update(elapsed)
+        self.update_health_sprites(game.health)
+
     def render_messages(self):
         """
         Render text messages from bottom-up.
         """
         rects = [rect for image, rect in self.message_list]
-        if rects:
-            self.message_layout(rects)
-            for image, rect in self.message_list:
-                self.display_surface.blit(image, rect)
+        self.message_layout(rects)
+        for image, rect in self.message_list:
+            self.display_surface.blit(image, rect)
 
-    def _render_frame(self, health_rects):
-        # Clear screen
+    def draw(self):
         self.display_surface.fill('black')
-
-        # Draw health
-        for rect in health_rects:
-            self.display_surface.blit(self.health_image, rect)
-
         self.render_messages()
         self.sprites.draw(self.display_surface)
-
         pygame.display.update()
 
     def get_click_card(self, point):
@@ -345,53 +369,44 @@ class ScoundrelPygame:
             ):
                 return sprite.card
 
+    def tick(self):
+        return self.clock.tick(self.framerate)
+
     def prompt_for_turn(self, game, available_choices):
         """
         Prompt to select card from room.
         """
+        # Setup for loop
         self.room_menu.update_for_available(available_choices)
-
-        health_rects = self._layout_health(game)
         self.layout_room_cards(available_choices)
         self.layout_battlefield(game)
         self.relationship_manager.update()
+        self.highlight = None
 
-        # Run until card selected for turn and return it.
-        elapsed = 0
+        # Loop until we get QUIT or a card.
+        # CANCEL loops and resumes choice for turn.
+        while True:
+            prompt_turn = PromptTurn(self, game)
+            result = prompt_turn.run()
+            if result == QuitPrompt.QUIT:
+                game.quit()
+                break
+            elif isinstance(result, ScoundrelCard):
+                return result
+
+    def prompt_for_quit(self, game):
+        self.sprites.add(self.quit_prompt_sprites)
+
+        prompt_quit = PromptQuit(self, game)
+        result = prompt_quit.run()
+
+        self.sprites.remove(self.quit_prompt_sprites)
+        return result
+
+    def on_game_over(self, event_name, game):
         running = True
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        # Click to return card for single turn in room.
-                        card = self.get_click_card(event.pos)
-                        if card:
-                            #self.message_list.clear()
-                            return card
-
-            self.animation_manager.update(elapsed)
-            self._render_frame(health_rects)
-            elapsed = self.clock.tick(self.framerate)
-
-
-def create_monster_sprite(image, rect=None):
-    sprite = pygame.sprite.Sprite()
-    sprite.image = image
-    sprite.rect = rect or image.get_rect()
-    sprite.deck = None
-    sprite.card = None
-    sprite.room = None
-    return sprite
-
-def create_run_card(size, font):
-    run_card = pygame.sprite.Sprite()
-    run_card.image = pygame.Surface(size)
-    run_card.rect = run_card.image.get_rect()
-    text_image = font.render('Run', True, 'white')
-    text_rect = text_image.get_rect(center=run_card.rect.center)
-    run_card.image.blit(text_image, text_rect)
-    run_card.card = None
-    run_card.deck = None
-    return run_card
+            pygame.display.update()

@@ -27,6 +27,7 @@ class Scoundrel:
 
         self.prompt_for_turn = prompt_for_turn
         self.god_mode = god_mode
+        self.want_quit = False
 
         self.avoided_room = False
         self.health = self.MAX_HEALTH
@@ -71,6 +72,9 @@ class Scoundrel:
         """
         for listener in self.listeners[event_name]:
             listener(event_name=event_name, game=self, **event_data)
+
+    def quit(self):
+        self.want_quit = True
 
     def move_card(self, card, source, dest, to_bottom=False):
         # source and dest are keys/names in to the decks
@@ -119,7 +123,11 @@ class Scoundrel:
 
     @property
     def is_playing(self):
-        return self.is_dungeon_alive and self.is_player_alive
+        return (
+            not self.want_quit
+            and self.is_dungeon_alive
+            and self.is_player_alive
+        )
 
     def choices_for_turn(self):
         """
@@ -271,6 +279,11 @@ class Scoundrel:
             self.begin_turn()
             choices = self.choices_for_turn()
             card_or_run = self.prompt_for_turn(self, choices)
+
+            # Player may have quit.
+            if self.want_quit:
+                break
+
             if isinstance(card_or_run, ScoundrelCard):
                 self.play_card(card_or_run)
             else:
@@ -282,4 +295,7 @@ class Scoundrel:
         """
         while self.is_playing:
             self.loop_step()
-        self.emit(Event.GAME_OVER)
+        if self.want_quit:
+            self.emit(Event.QUIT_GAME)
+        else:
+            self.emit(Event.GAME_OVER)
